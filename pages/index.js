@@ -716,7 +716,7 @@ function Guide({ state, onToggleObj, addXP }) {
         {isOpen && <ItemPanel item={item} />}
       </div>
     );
-  };
+  });
 
   return (
     <div>
