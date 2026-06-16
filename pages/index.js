@@ -6,7 +6,7 @@ import {
   SchemaPowerInterest, SchemaADKAR, SchemaKotter,
   SchemaCycleVie, SchemaScrum, SchemaCPM,
   SchemaPareto, SchemaTornado, SchemaVUCA
-} from "./Schemas";
+} from "../components/Schemas";
 
 // ═══════════════════════════════════════════════════
 // STYLES
