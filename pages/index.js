@@ -1,9 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
+import {
+  schemaCSS, SCHEMA_CATALOG, PageVisuels,
+  SchemaEVM, SchemaTuckman, SchemaMaslow, SchemaHersey,
+  SchemaHerzberg, SchemaCynefin, SchemaRiskMatrix,
+  SchemaPowerInterest, SchemaADKAR, SchemaKotter,
+  SchemaCycleVie, SchemaScrum, SchemaCPM,
+  SchemaPareto, SchemaTornado, SchemaVUCA
+} from "./Schemas";
 
 // ═══════════════════════════════════════════════════
 // STYLES
 // ═══════════════════════════════════════════════════
 const css = `
+${schemaCSS}
+
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,700;1,9..144,400&family=JetBrains+Mono:wght@400;500&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
@@ -495,6 +505,7 @@ function Dashboard({ state, goTo }) {
         {ico:"🎯",page:"diagnostic",t:"Diagnostic de niveau",s:"Personnalise ton parcours"},
         {ico:"📚",page:"guide",t:"Guide PMBOK 7",s:"12 principes + 8 domaines"},
         {ico:"⚡",page:"sprint",t:"Sprint 15 min",s:"Entraînement intensif · +15 XP/bonne réponse"},
+        {ico:"📐",page:"visuels",t:"Schémas & Visuels",s:"16 schémas interactifs avec références"},
         {ico:"🃏",page:"flashcards",t:"Flashcards SRS",s:"Mémorisation intelligente"},
         {ico:"⏱️",page:"exam",t:"Simulateur examen",s:"Questions style PMP réel"},
         {ico:"📊",page:"progress",t:"Ma progression",s:"Badges, prédiction, plan"},
@@ -569,6 +580,16 @@ function Guide({ state, onToggleObj, addXP }) {
   const [quizData, setQuizData] = useState({});
   const [quizLoading, setQuizLoading] = useState({});
 
+
+  // Schémas contextuels par item
+  const ITEM_SCHEMAS = {
+    "p2": SchemaTuckman, "p3": SchemaPowerInterest, "p6": SchemaMaslow,
+    "p7": SchemaCycleVie, "p8": SchemaPareto, "p9": SchemaCynefin,
+    "p10": SchemaRiskMatrix, "p12": SchemaADKAR,
+    "d1": SchemaPowerInterest, "d2": SchemaTuckman, "d3": SchemaScrum,
+    "d4": SchemaCPM, "d7": SchemaEVM, "d8": SchemaVUCA,
+  };
+
   const principles = ITEMS.filter(i => i.type === "principle");
   const domains = ITEMS.filter(i => i.type === "domain");
 
@@ -582,7 +603,7 @@ function Guide({ state, onToggleObj, addXP }) {
     setQuizLoading(q => ({...q, [key]: true}));
     const lvlInstr = state.userLevel === "advanced" ? "Niveau avancé, situations complexes." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible pour débutants.";
     try {
-      const resp = await fetch("/api/claude", {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
@@ -620,6 +641,7 @@ function Guide({ state, onToggleObj, addXP }) {
           <button onClick={() => setOpenPanel(null)} style={{background:"rgba(255,255,255,0.05)",border:"none",color:"var(--slate-l)",width:26,height:26,borderRadius:6,cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
         </div>
         <div className="det-body" dangerouslySetInnerHTML={{__html: item.body}} />
+        {ITEM_SCHEMAS[item.id] && (() => { const S = ITEM_SCHEMAS[item.id]; return <S />; })()}
         <div style={{fontFamily:"JetBrains Mono,monospace",fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"var(--indigo-l)",marginBottom:10}}>OBJECTIFS D'APPRENTISSAGE</div>
         {item.objectives.map((obj, i) => {
           const on = state.checked[item.id + "_" + i];
@@ -694,7 +716,7 @@ function Guide({ state, onToggleObj, addXP }) {
         {isOpen && <ItemPanel item={item} />}
       </div>
     );
-  });
+  };
 
   return (
     <div>
@@ -825,7 +847,7 @@ function Exam({ state, addXP, onExamDone }) {
     const topics = THEMES[theme];
     const lvlInstr = state.userLevel === "advanced" ? "Niveau avancé, situations complexes." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible.";
     try {
-      const resp = await fetch("/api/claude", {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
@@ -999,7 +1021,7 @@ function Sprint15({ state, addXP }) {
     const t = SPRINT_THEMES.find(t => t.id === theme);
     const lvl = state.userLevel === "advanced" ? "Niveau avancé, situations complexes." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible.";
     try {
-      const resp = await fetch("/api/claude", {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
@@ -1378,6 +1400,7 @@ export default function App() {
     {id:"guide",      ico:"📚", lbl:"Guide"},
     {id:"flashcards", ico:"🃏", lbl:"Cartes"},
     {id:"sprint",     ico:"⚡", lbl:"Sprint"},
+    {id:"visuels",    ico:"📐", lbl:"Visuels"},
     {id:"exam",       ico:"⏱️", lbl:"Examen"},
     {id:"progress",   ico:"📊", lbl:"Progrès"},
   ];
@@ -1403,6 +1426,7 @@ export default function App() {
           {page === "guide" && <Guide state={state} onToggleObj={onToggleObj} addXP={addXP} />}
           {page === "flashcards" && <Flashcards state={state} onRate={onRate} addXP={addXP} />}
           {page === "sprint" && <Sprint15 state={state} addXP={addXP} />}
+          {page === "visuels" && <PageVisuels />}
           {page === "exam" && <Exam state={state} addXP={addXP} onExamDone={onExamDone} />}
           {page === "progress" && <Progress state={state} />}
         </div>
