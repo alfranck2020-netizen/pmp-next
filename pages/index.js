@@ -847,19 +847,24 @@ function Exam({ state, addXP, onExamDone }) {
     const topics = THEMES[theme];
     const lvlInstr = state.userLevel === "advanced" ? "Niveau avancé, situations complexes." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible.";
     try {
-      const resp = await fetch("/api/claude", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1500,
-          messages: [{role: "user", content: `Tu es expert certifié PMP.\n\nCrée ${n} questions situationnelles style examen PMP pour ces thèmes : ${topics.slice(0,5).join(", ")}.\n\nNiveau : ${lvlInstr}\n\nRÈGLES :\n- Scénario réaliste 2-3 phrases\n- 4 options (A,B,C,D), une seule correcte\n- Explication concise (2 phrases max)\n- Varier les thèmes\n- En français\n\nRéponds UNIQUEMENT avec JSON valide sans backticks :\n{"questions":[{"domain":"nom du domaine","scenario":"...","question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"..."}]}`}]
-        })
-      });
-      const data = await resp.json();
-      const text = data.content.map(i => i.text || "").join("");
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-      setQuestions(parsed.questions);
+      // 2 appels parallèles pour générer n questions rapidement
+      const half = Math.ceil(n / 2);
+      const makeExamCall = async (part) => {
+        const r = await fetch("/api/claude", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 1500,
+            messages: [{role: "user", content: `Tu es expert certifié PMP.\n\nCrée ${half} questions situationnelles style examen PMP pour ces thèmes : ${topics.slice(0,5).join(", ")} - série ${part}/2.\n\nNiveau : ${lvlInstr}\n\nRÈGLES :\n- Scénario réaliste 2-3 phrases\n- 4 options (A,B,C,D), une seule correcte\n- Distracteurs très plausibles\n- Explication concise (2 phrases max)\n- Varier les thèmes\n- En français\n\nRéponds UNIQUEMENT avec JSON valide sans backticks :\n{"questions":[{"domain":"nom du domaine","scenario":"...","question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"..."}]}`}]
+          })
+        });
+        const d = await r.json();
+        const txt = d.content.map(i => i.text || "").join("");
+        return JSON.parse(txt.replace(/```json|```/g, "").trim()).questions;
+      };
+      const [eq1, eq2] = await Promise.all([makeExamCall(1), makeExamCall(2)]);
+      setQuestions([...eq1, ...eq2]);
       setAnswers({});
       setCurrentQ(0);
       setSecs(0);
@@ -1021,21 +1026,25 @@ function Sprint15({ state, addXP }) {
     const t = SPRINT_THEMES.find(t => t.id === theme);
     const lvl = state.userLevel === "advanced" ? "Niveau avancé, situations complexes." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible.";
     try {
-      const resp = await fetch("/api/claude", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1500,
-          messages: [{role: "user", content:
-            `Tu es expert certifié PMP. Crée 12 questions ULTRA-COURTES style Sprint PMP pour le thème "${t.name}" (${t.topics.slice(0,4).join(", ")}).\n\nNiveau : ${lvl}\n\nRÈGLES STRICTES :\n- Scénario MAX 1 phrase courte\n- Question directe et précise\n- 4 options courtes (A,B,C,D), une seule correcte\n- Explication en 1 phrase max\n- Conçu pour être répondu en 30-45 secondes\n- Varier les sous-thèmes\n- En français\n\nRéponds UNIQUEMENT avec JSON valide sans backticks :\n{"questions":[{"scenario":"...","question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"..."}]}`
-          }]
-        })
-      });
-      const data = await resp.json();
-      const text = data.content.map(i => i.text || "").join("");
-      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-      setQuestions(parsed.questions);
+      // 2 appels parallèles de 10 questions = 20 questions total
+      const makeCall = async (part) => {
+        const r = await fetch("/api/claude", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 1500,
+            messages: [{role: "user", content:
+              `Tu es expert certifié PMP. Crée 10 questions ULTRA-COURTES style Sprint PMP pour le thème "${t.name}" (${t.topics.slice(0,4).join(", ")}) - série ${part}/2.\n\nNiveau : ${lvl}\n\nRÈGLES STRICTES :\n- Scénario MAX 1 phrase courte\n- Question directe et précise\n- 4 options courtes (A,B,C,D), une seule correcte\n- Explication en 1 phrase max\n- Conçu pour être répondu en 30-45 secondes\n- Varier les sous-thèmes\n- En français\n\nRéponds UNIQUEMENT avec JSON valide sans backticks :\n{"questions":[{"scenario":"...","question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"..."}]}`
+            }]
+          })
+        });
+        const d = await r.json();
+        const txt = d.content.map(i => i.text || "").join("");
+        return JSON.parse(txt.replace(/```json|```/g, "").trim()).questions;
+      };
+      const [q1, q2] = await Promise.all([makeCall(1), makeCall(2)]);
+      setQuestions([...q1, ...q2]);
       setAnswers({});
       setCurrentQ(0);
       setTimeLeft(SPRINT_DURATION);
