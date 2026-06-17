@@ -608,7 +608,7 @@ function Guide({ state, onToggleObj, addXP }) {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 1000,
+          max_tokens: 2500,
           messages: [{role: "user", content: `Tu es un expert certifié PMP créant des questions d'examen officielles.\n\nCrée 3 questions situationnelles pour le thème : "${item.title}"\nNiveau : ${lvlInstr}\n\nRÈGLES :\n- Scénario réaliste 2-3 phrases\n- 4 options (A,B,C,D), une seule correcte\n- Explication concise\n- En français\n\nRéponds UNIQUEMENT avec JSON valide sans backticks :\n{"questions":[{"scenario":"...","question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"..."}]}`}]
         })
       });
@@ -852,7 +852,7 @@ function Exam({ state, addXP, onExamDone }) {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 1000,
+          max_tokens: 2500,
           messages: [{role: "user", content: `Tu es expert certifié PMP.\n\nCrée ${n} questions situationnelles style examen PMP pour ces thèmes : ${topics.slice(0,5).join(", ")}.\n\nNiveau : ${lvlInstr}\n\nRÈGLES :\n- Scénario réaliste 2-3 phrases\n- 4 options (A,B,C,D), une seule correcte\n- Explication concise (2 phrases max)\n- Varier les thèmes\n- En français\n\nRéponds UNIQUEMENT avec JSON valide sans backticks :\n{"questions":[{"domain":"nom du domaine","scenario":"...","question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"..."}]}`}]
         })
       });
@@ -1026,7 +1026,7 @@ function Sprint15({ state, addXP }) {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 1000,
+          max_tokens: 2500,
           messages: [{role: "user", content:
             `Tu es expert certifié PMP. Crée 20 questions ULTRA-COURTES style Sprint PMP pour le thème "${t.name}" (${t.topics.slice(0,4).join(", ")}).\n\nNiveau : ${lvl}\n\nRÈGLES STRICTES :\n- Scénario MAX 1 phrase courte\n- Question directe et précise\n- 4 options courtes (A,B,C,D), une seule correcte\n- Explication en 1 phrase max\n- Conçu pour être répondu en 30-45 secondes\n- Varier les sous-thèmes\n- En français\n\nRéponds UNIQUEMENT avec JSON valide sans backticks :\n{"questions":[{"scenario":"...","question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"..."}]}`
           }]
