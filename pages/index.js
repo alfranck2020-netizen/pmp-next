@@ -603,7 +603,7 @@ function Guide({ state, onToggleObj, addXP }) {
     setQuizLoading(q => ({...q, [key]: true}));
     const lvlInstr = state.userLevel === "advanced" ? "Niveau avancé, situations complexes." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible pour débutants.";
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      const resp = await fetch("/api/claude", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
@@ -847,7 +847,7 @@ function Exam({ state, addXP, onExamDone }) {
     const topics = THEMES[theme];
     const lvlInstr = state.userLevel === "advanced" ? "Niveau avancé, situations complexes." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible.";
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      const resp = await fetch("/api/claude", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
@@ -1021,7 +1021,7 @@ function Sprint15({ state, addXP }) {
     const t = SPRINT_THEMES.find(t => t.id === theme);
     const lvl = state.userLevel === "advanced" ? "Niveau avancé, situations complexes." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible.";
     try {
-      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      const resp = await fetch("/api/claude", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
