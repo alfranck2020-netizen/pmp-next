@@ -505,6 +505,8 @@ function Dashboard({ state, goTo }) {
         {ico:"🎯",page:"diagnostic",t:"Diagnostic de niveau",s:"Personnalise ton parcours"},
         {ico:"📚",page:"guide",t:"Guide PMBOK 7",s:"12 principes + 8 domaines"},
         {ico:"⚡",page:"sprint",t:"Sprint 15 min",s:"Entraînement intensif · +15 XP/bonne réponse"},
+        {ico:"📋",page:"cas",t:"Études de cas",s:"Scénarios complexes · Mode Entraînement ou Examen"},
+        {ico:"🆚",page:"pmbok8",t:"PMBOK 7 vs 8",s:"Comprendre l'évolution du standard PMI"},
         {ico:"📐",page:"visuels",t:"Schémas & Visuels",s:"16 schémas interactifs avec références"},
         {ico:"🃏",page:"flashcards",t:"Flashcards SRS",s:"Mémorisation intelligente"},
         {ico:"⏱️",page:"exam",t:"Simulateur examen",s:"Questions style PMP réel"},
@@ -1347,6 +1349,608 @@ function Progress({ state }) {
 // ═══════════════════════════════════════════════════
 // APP PRINCIPALE
 // ═══════════════════════════════════════════════════
+// ── ÉTUDES DE CAS ──
+const DOMAINES_PMI = [
+  {id:"tous", ico:"📋", name:"Tous les domaines", desc:"Mélange complet", topics:["Personnes","Processus","Environnement professionnel"]},
+  {id:"personnes", ico:"🧑", name:"Personnes", desc:"42% de l'examen", topics:["Leadership","Gestion de conflits","Motivation d'équipe","Parties prenantes","Coaching","Négociation"]},
+  {id:"processus", ico:"⚙️", name:"Processus", desc:"50% de l'examen", topics:["EVM","Planification","Risques","Qualité","Scope","Approvisionnements","Intégration"]},
+  {id:"environnement", ico:"🌍", name:"Environnement pro", desc:"8% de l'examen", topics:["Conformité","Bénéfices organisationnels","Changement organisationnel","Culture d'entreprise"]},
+  {id:"agile", ico:"🔄", name:"Agile / Hybride", desc:"Toutes approches", topics:["Scrum","Kanban","Hybride","Vélocité","Backlog","Rétrospectives"]},
+];
+
+function CasEtude({ state, addXP }) {
+  const [phase, setPhase] = useState("setup");
+  const [domaine, setDomaine] = useState("tous");
+  const [modeExamen, setModeExamen] = useState(false);
+  const [nbQuestions, setNbQuestions] = useState(5);
+  const [casData, setCasData] = useState(null);
+  const [currentQ, setCurrentQ] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [history, setHistory] = useState([]);
+
+  const genererCas = async () => {
+    setPhase("loading");
+    const d = DOMAINES_PMI.find(x => x.id === domaine);
+    const lvl = state.userLevel === "advanced" ? "Niveau avancé, situations complexes et ambiguës." : state.userLevel === "intermediate" ? "Niveau intermédiaire." : "Niveau accessible mais réaliste.";
+
+    try {
+      const resp = await fetch("/api/claude", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 2000,
+          messages: [{role: "user", content:
+            `Tu es un expert certifié PMP créant une étude de cas complexe pour l'examen PMP, basée sur le domaine "${d.name}" (${d.topics.slice(0,4).join(", ")}).\n\n${lvl}\n\nCrée UN scénario de projet complexe et réaliste (6-9 phrases) mêlant plusieurs problématiques : contexte du projet, chiffres concrets (EVM, délais, budget si pertinent), dynamique d'équipe, contraintes de parties prenantes, et un ou plusieurs dilemmes de gestion de projet.\n\nPuis crée ${nbQuestions} questions à choix multiples TOUTES basées sur ce même scénario, qui testent différents aspects de la situation.\n\nRÈGLES :\n- 4 options par question (A,B,C,D), une seule correcte, distracteurs plausibles\n- Explication de 2-3 phrases par question liant la réponse aux principes PMBOK 7\n- Termine par un court débriefing global (3-4 phrases)\n- En français\n\nRéponds UNIQUEMENT avec JSON valide sans backticks :\n{"titre":"Titre court","scenario":"Le scénario complet...","questions":[{"question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"B","explanation":"..."}],"debrief":"Le débriefing global..."}`
+          }]
+        })
+      });
+      const data = await resp.json();
+      const text = data.content.map(i => i.text || "").join("");
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      setCasData(parsed);
+      setAnswers({});
+      setCurrentQ(0);
+      setPhase("reading");
+    } catch(e) {
+      alert("Erreur lors de la génération du cas. Vérifie ta connexion et réessaie.");
+      setPhase("setup");
+    }
+  };
+
+  const startQuiz = () => setPhase("quiz");
+
+  const selectAnswer = (sel) => {
+    if (!modeExamen && answers[currentQ]) return;
+    const q = casData.questions[currentQ];
+    const ok = sel === q.correct;
+    setAnswers(a => ({...a, [currentQ]: {sel, correct: q.correct, ok}}));
+    if (ok) addXP(modeExamen ? 25 : 20, "Bonne réponse — Étude de cas ✓");
+  };
+
+  const nextQuestion = () => {
+    if (currentQ < casData.questions.length - 1) setCurrentQ(c => c + 1);
+    else finishCas();
+  };
+
+  const finishCas = () => {
+    const total = casData.questions.length;
+    const correct = Object.values(answers).filter(a => a.ok).length;
+    const pct = Math.round((correct / total) * 100);
+    const entry = {titre: casData.titre, pct, correct, total, mode: modeExamen ? "Examen" : "Entraînement", date: new Date().toLocaleDateString("fr-FR")};
+    setHistory(h => [entry, ...h].slice(0, 5));
+    addXP(pct >= 80 ? 80 : pct >= 60 ? 50 : 25, "Étude de cas terminée !");
+    setPhase("debrief");
+  };
+
+  const q = casData?.questions?.[currentQ];
+  const ans = answers[currentQ];
+  const answeredCount = Object.keys(answers).length;
+  const correctCount = Object.values(answers).filter(a => a.ok).length;
+
+  if (phase === "setup") return (
+    <div>
+      <div className="eyebrow">Analyse de situations complexes</div>
+      <div className="sec-title">Études de cas 📋</div>
+      <div className="sec-desc">Scénarios riches avec plusieurs questions liées — le format des questions situationnelles complexes de l'examen PMP réel.</div>
+
+      <div style={{fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:"var(--slate-l)",marginBottom:10}}>Domaines PMI</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
+        {DOMAINES_PMI.map(d => (
+          <button key={d.id} onClick={() => setDomaine(d.id)}
+            style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:"var(--r)",border:domaine===d.id?"2px solid var(--indigo)":"1px solid var(--border2)",background:domaine===d.id?"rgba(99,102,241,0.1)":"var(--bg2)",cursor:"pointer",textAlign:"left",fontFamily:"Plus Jakarta Sans,sans-serif",color:"var(--text)",width:"100%"}}>
+            <div style={{fontSize:20}}>{d.ico}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600}}>{d.name}</div>
+              <div style={{fontSize:11,color:"var(--slate-l)"}}>{d.desc}</div>
+            </div>
+            {domaine===d.id && <div style={{color:"var(--indigo-l)",fontSize:16}}>✓</div>}
+          </button>
+        ))}
+      </div>
+
+      <div style={{fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:"var(--slate-l)",marginBottom:10}}>Mode</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:18}}>
+        <button onClick={() => setModeExamen(false)}
+          style={{padding:"14px 10px",borderRadius:"var(--r)",border:!modeExamen?"2px solid var(--green)":"1px solid var(--border2)",background:!modeExamen?"rgba(16,185,129,0.1)":"var(--bg2)",cursor:"pointer",textAlign:"center"}}>
+          <div style={{fontSize:18,marginBottom:4}}>📖</div>
+          <div style={{fontSize:13,fontWeight:700,color:!modeExamen?"var(--green-l)":"var(--text)"}}>Entraînement</div>
+          <div style={{fontSize:10,color:"var(--slate-l)",marginTop:2}}>Explication après chaque question</div>
+        </button>
+        <button onClick={() => setModeExamen(true)}
+          style={{padding:"14px 10px",borderRadius:"var(--r)",border:modeExamen?"2px solid var(--red)":"1px solid var(--border2)",background:modeExamen?"rgba(239,68,68,0.1)":"var(--bg2)",cursor:"pointer",textAlign:"center"}}>
+          <div style={{fontSize:18,marginBottom:4}}>⏱️</div>
+          <div style={{fontSize:13,fontWeight:700,color:modeExamen?"#FCA5A5":"var(--text)"}}>Examen</div>
+          <div style={{fontSize:10,color:"var(--slate-l)",marginTop:2}}>Sans feedback avant la fin</div>
+        </button>
+      </div>
+
+      <div style={{fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:"var(--slate-l)",marginBottom:10}}>Nombre de questions liées</div>
+      <div style={{display:"flex",gap:8,marginBottom:20}}>
+        {[3,5,8].map(n => (
+          <button key={n} onClick={() => setNbQuestions(n)}
+            style={{flex:1,padding:"10px",borderRadius:"var(--r-sm)",border:nbQuestions===n?"2px solid var(--indigo)":"1px solid var(--border2)",background:nbQuestions===n?"rgba(99,102,241,0.1)":"var(--bg2)",color:nbQuestions===n?"var(--indigo-l)":"var(--text-2)",fontWeight:700,cursor:"pointer",fontFamily:"Plus Jakarta Sans,sans-serif"}}>
+            {n} questions
+          </button>
+        ))}
+      </div>
+
+      <button className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:14,fontSize:14}} onClick={genererCas}>
+        📋 Générer l'étude de cas →
+      </button>
+
+      {history.length > 0 && (
+        <div style={{marginTop:20}}>
+          <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:"var(--slate-l)",marginBottom:10}}>📂 Derniers cas traités</div>
+          {history.map((h,i) => (
+            <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"var(--bg2)",border:"1px solid var(--border2)",borderRadius:"var(--r-sm)",padding:"10px 14px",marginBottom:6}}>
+              <div>
+                <div style={{fontSize:12,fontWeight:600}}>{h.titre}</div>
+                <div style={{fontSize:10,color:"var(--slate-l)"}}>{h.date} · {h.mode} · {h.correct}/{h.total}</div>
+              </div>
+              <div style={{fontFamily:"Fraunces,serif",fontSize:18,fontWeight:700,color:h.pct>=80?"var(--green-l)":h.pct>=60?"var(--gold-l)":"var(--red)"}}>{h.pct}%</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  if (phase === "loading") return (
+    <div className="loading-box">
+      <div className="spinner" />
+      <div style={{fontSize:13,color:"var(--text-2)",marginBottom:6}}>Génération de l'étude de cas…</div>
+      <div style={{fontSize:12,color:"var(--slate-l)"}}>Scénario complexe + {nbQuestions} questions liées</div>
+    </div>
+  );
+
+  if (phase === "reading") return (
+    <div>
+      <div style={{display:"inline-block",fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"var(--indigo-l)",background:"rgba(99,102,241,0.1)",padding:"3px 10px",borderRadius:20,marginBottom:10}}>
+        {DOMAINES_PMI.find(d=>d.id===domaine)?.ico} {DOMAINES_PMI.find(d=>d.id===domaine)?.name} · {modeExamen ? "Mode Examen" : "Mode Entraînement"}
+      </div>
+      <div style={{fontFamily:"Fraunces,serif",fontSize:19,fontWeight:700,marginBottom:14}}>{casData.titre}</div>
+      <div className="card" style={{marginBottom:16}}>
+        <div style={{fontSize:13,color:"var(--text)",lineHeight:1.8}}>{casData.scenario}</div>
+      </div>
+      <div style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.15)",borderRadius:"var(--r-sm)",padding:12,marginBottom:16,fontSize:12,color:"var(--text-2)"}}>
+        📌 Ce cas comporte <strong style={{color:"var(--indigo-l)"}}>{casData.questions.length} questions liées</strong>. Lis bien le scénario avant de commencer.
+      </div>
+      <button className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:14,fontSize:14}} onClick={startQuiz}>
+        Commencer les questions →
+      </button>
+    </div>
+  );
+
+  if (phase === "quiz") return (
+    <div>
+      <div className="exam-topbar">
+        <div style={{fontSize:12,color:"var(--slate-l)"}}>Q <strong style={{color:"var(--text)"}}>{currentQ+1}</strong> / <strong style={{color:"var(--text)"}}>{casData.questions.length}</strong></div>
+        <div className="ep-bar"><div className="ep-fill" style={{width: ((currentQ+1)/casData.questions.length*100)+"%"}} /></div>
+        {!modeExamen && (
+          <div style={{display:"flex",gap:8,fontSize:11,color:"var(--slate-l)"}}>
+            <span>✅ {correctCount}</span><span>❓ {answeredCount}</span>
+          </div>
+        )}
+        {modeExamen && <div className="sprint-badge" style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",color:"#FCA5A5"}}>⏱️ Mode Examen</div>}
+      </div>
+
+      <details style={{marginBottom:14,background:"var(--bg2)",border:"1px solid var(--border2)",borderRadius:"var(--r-sm)",padding:"10px 14px"}}>
+        <summary style={{cursor:"pointer",fontSize:12,fontWeight:600,color:"var(--indigo-l)"}}>📄 Revoir le scénario</summary>
+        <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.7,marginTop:8}}>{casData.scenario}</div>
+      </details>
+
+      {q && (
+        <div className="card" style={{marginBottom:14}}>
+          <div className="q-text" style={{marginBottom:14}}>{q.question}</div>
+          {["A","B","C","D"].map(l => {
+            let cls = "q-opt";
+            if (!modeExamen && ans) {
+              if (l === q.correct) cls += " correct";
+              else if (l === ans.sel) cls += " wrong";
+            } else if (modeExamen && ans?.sel === l) {
+              cls += " correct";
+            }
+            return (
+              <button key={l} className={cls} disabled={!modeExamen && !!ans} onClick={() => selectAnswer(l)}>
+                <span className="q-letter">{l}.</span><span>{q.options[l]}</span>
+              </button>
+            );
+          })}
+          {!modeExamen && ans && (
+            <div className="q-expl show">
+              <strong>{ans.ok ? "✓ Bonne réponse !" : "✗ La bonne réponse était " + q.correct + "."}</strong> {q.explanation}
+            </div>
+          )}
+        </div>
+      )}
+
+      <button className="btn btn-primary" style={{width:"100%",justifyContent:"center"}} disabled={!ans} onClick={nextQuestion}>
+        {currentQ < casData.questions.length-1 ? "Question suivante →" : "Voir le débriefing →"}
+      </button>
+    </div>
+  );
+
+  const totalQ = casData.questions.length;
+  const correct = Object.values(answers).filter(a => a.ok).length;
+  const pct = Math.round((correct/totalQ)*100);
+  return (
+    <div>
+      <div className="result-hero" style={{marginBottom:14}}>
+        <div className={"res-pct " + (pct>=61 ? "pass" : "fail")}>{pct}%</div>
+        <div style={{fontSize:13,color:"var(--text-2)",margin:"7px 0"}}>{correct} / {totalQ} bonnes réponses</div>
+        <div className={"verdict " + (pct>=61 ? "v-pass" : "v-fail")}>{pct>=61 ? "🎯 CAS MAÎTRISÉ" : "📚 À retravailler"}</div>
+      </div>
+
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:"var(--indigo-l)",marginBottom:8}}>📋 Débriefing global</div>
+        <div style={{fontSize:13,color:"var(--text-2)",lineHeight:1.75}}>{casData.debrief}</div>
+      </div>
+
+      {modeExamen && (
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:"var(--slate-l)",marginBottom:10}}>Détail des réponses</div>
+          {casData.questions.map((qq, i) => {
+            const a = answers[i];
+            return (
+              <div key={i} className="q-block" style={{marginBottom:8}}>
+                <div className="q-text" style={{marginBottom:8}}>{i+1}. {qq.question}</div>
+                <div style={{fontSize:12,color: a?.ok ? "var(--green-l)" : "#FCA5A5",marginBottom:6}}>
+                  {a?.ok ? "✓ Correct" : `✗ Ta réponse: ${a?.sel} — Correcte: ${qq.correct}`}
+                </div>
+                <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.6}}>{qq.explanation}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <button className="btn btn-primary" style={{width:"100%",justifyContent:"center"}} onClick={() => setPhase("setup")}>
+        ↺ Nouvelle étude de cas
+      </button>
+    </div>
+  );
+}
+
+// ── COMPARAISON PMBOK 7 vs 8 ──
+const COMPARAISON_DATA = {
+  principes: {
+    titre: "Principes : 12 → 6",
+    intro: "Le PMBOK 8 consolide les 12 principes du PMBOK 7 en 6 principes plus concrets et mieux ciblés. Chaque nouveau principe est accompagné d'exemples pratiques et d'implications par domaine.",
+    pmbok7: [
+      {code:"P01", titre:"Intendance (Stewardship)", court:"Être un gardien responsable et éthique"},
+      {code:"P02", titre:"Équipe collaborative", court:"Créer un environnement favorisant la collaboration"},
+      {code:"P03", titre:"Engagement des parties prenantes", court:"S'engager proactivement avec toutes les parties"},
+      {code:"P04", titre:"Création de valeur", court:"Se concentrer sur la livraison de valeur réelle"},
+      {code:"P05", titre:"Pensée systémique", court:"Reconnaître les interactions complexes du système"},
+      {code:"P06", titre:"Leadership", court:"Démontrer des comportements inspirants"},
+      {code:"P07", titre:"Adaptation (Tailoring)", court:"Adapter l'approche au contexte spécifique"},
+      {code:"P08", titre:"Qualité", court:"Intégrer la qualité dans les processus et livrables"},
+      {code:"P09", titre:"Complexité", court:"Évaluer et naviguer en permanence la complexité"},
+      {code:"P10", titre:"Risques & Opportunités", court:"Identifier et répondre proactivement aux risques"},
+      {code:"P11", titre:"Adaptabilité & Résilience", court:"Construire l'adaptabilité dans les approches"},
+      {code:"P12", titre:"Changement organisationnel", court:"Accompagner le changement"},
+    ],
+    pmbok8: [
+      {
+        code:"N01", titre:"La vue holistique", court:"Comprendre le contexte global du projet",
+        fusion:["P05","P09","P03"],
+        desc:"Remplace la pensée systémique, la complexité et partiellement l'engagement des parties prenantes. L'équipe doit 'faire un zoom arrière' pour voir les contraintes et les changements dans leur contexte global. Inclut la gestion des interactions entre organisations, parties prenantes et zones géographiques.",
+        exemples:"Analyser l'impact d'une décision sur l'ensemble du système avant d'agir. Considérer les effets secondaires et les interdépendances.",
+        pratique:"État d'esprit proactif : anticiper les difficultés, adapter les processus à l'évolution des besoins."
+      },
+      {
+        code:"N02", titre:"La valeur comme axe prioritaire", court:"Orienter toutes les décisions vers la création de valeur",
+        fusion:["P04","P03"],
+        desc:"Consolide la création de valeur et partiellement l'engagement des parties prenantes. La valeur n'existe que lorsque les parties prenantes sont comprises puis guidées à travers le changement. C'est le moteur fondamental de tous les projets.",
+        exemples:"Évaluer chaque livrable par rapport à la valeur qu'il crée. Prioriser le backlog selon l'impact sur la valeur business.",
+        pratique:"Approche axée sur la valeur : viser la production d'extrants ET de résultats concrets mesurables."
+      },
+      {
+        code:"N03", titre:"L'intégration de la qualité dans les processus et les livrables", court:"Construire la qualité dès la conception",
+        fusion:["P08"],
+        desc:"Évolue du principe de qualité PMBOK 7 avec plus de concrétude. La qualité est intégrée dans chaque phase, pas vérifiée en fin de projet. Inclut l'amélioration continue et la mesure de la qualité à tous les niveaux.",
+        exemples:"Définir des critères de qualité dans la charte du projet. Utiliser des KPIs qualité mesurables tout au long du cycle de vie.",
+        pratique:"Élimination du gaspillage, mesure systématique, intégration dans les domaines de performance."
+      },
+      {
+        code:"N04", titre:"Le leader redevable", court:"Rendre les leaders responsables de leurs décisions",
+        fusion:["P06","P01","P02"],
+        desc:"Consolide leadership, intendance et partiellement équipe collaborative. Les leaders ne se contentent pas de prendre des décisions — ils sont redevables de ces décisions et collaborent avec l'équipe. Leadership partagé et situationnel.",
+        exemples:"Un PM redevable documente ses décisions et leurs impacts. Il rend compte au sponsor des écarts et propose des solutions.",
+        pratique:"Leadership partagé, redevabilité formelle, power skills (compétences interpersonnelles) obligatoires."
+      },
+      {
+        code:"N05", titre:"L'intégration de la durabilité dans tous les domaines du projet", court:"Nouveau : considérations ESG dans chaque décision",
+        fusion:["NOUVEAU"],
+        desc:"NOUVEAU dans PMBOK 8. La durabilité élargit le périmètre du management de projet avec des horizons temporels plus longs et un plus grand nombre de parties prenantes. Inclut les dimensions environnementale, sociale et économique (ESG). Les KPI liés à la durabilité doivent figurer dans la charte du projet.",
+        exemples:"Inclure des objectifs durabilité dans le Business Case. Mesurer l'empreinte carbone du projet. Intégrer des critères ESG dans les critères d'évaluation des fournisseurs.",
+        pratique:"Pyramide de durabilité (3 niveaux). Management axé sur la conformité → les réalisations → la durabilité."
+      },
+      {
+        code:"N06", titre:"La création d'une culture de l'autonomisation", court:"Développer l'auto-organisation et la responsabilisation",
+        fusion:["P02","P07","P12"],
+        desc:"Consolide équipe collaborative, adaptation et changement organisationnel. L'accent est mis sur la redevabilité partagée et l'auto-organisation. Les équipes ne se contentent pas de suivre les instructions — elles prennent des initiatives et sont responsables des résultats.",
+        exemples:"Déléguer la prise de décision technique à l'équipe. Créer des accords d'équipe (Working Agreements) co-construits.",
+        pratique:"Accords d'équipe, décisions distribuées, responsabilisation à tous les niveaux."
+      },
+    ],
+    correspondance: [
+      {p7:["P05","P09","P03"], p8:"N01", label:"Vue holistique"},
+      {p7:["P04","P03"], p8:"N02", label:"Valeur prioritaire"},
+      {p7:["P08"], p8:"N03", label:"Qualité intégrée"},
+      {p7:["P06","P01","P02"], p8:"N04", label:"Leader redevable"},
+      {p7:["NOUVEAU"], p8:"N05", label:"Durabilité (NOUVEAU)"},
+      {p7:["P02","P07","P12"], p8:"N06", label:"Autonomisation"},
+    ]
+  },
+  domaines: {
+    titre: "Domaines : 8 → 7",
+    intro: "Les 8 domaines de performance du PMBOK 7 sont réorganisés en 7 domaines dans le PMBOK 8, avec une restructuration majeure : les 5 groupes de processus classiques (Lancement, Planification, Exécution, Suivi & Maîtrise, Clôture) sont réintroduits comme 'domaines d'intérêt'.",
+    pmbok7: ["Parties prenantes","Équipe","Approche & Cycle de vie","Planification","Travail du projet","Livraison","Mesure","Incertitude"],
+    pmbok8: [
+      {nom:"Gouvernance", ico:"🏛️", desc:"Supervise les mécanismes de contrôle formels et informels. Intègre les processus de lancement, exécution, suivi et clôture. Remplace partiellement 'Travail du projet' et 'Incertitude'.", processus:["Lancer le projet/phase","Intégrer et aligner les plans","Gérer l'exécution","Gérer l'assurance qualité","Suivre et maîtriser la performance","Évaluer et mettre en œuvre les changements","Clore le projet/phase"]},
+      {nom:"Périmètre", ico:"📐", desc:"Définit et contrôle ce qui est inclus ou exclu du projet. Processus formalisés avec 40 processus non prescriptifs adaptables.", processus:["Planifier la gestion du périmètre","Obtenir et analyser les exigences","Définir le périmètre","Élaborer la structure du périmètre (WBS)","Suivre et maîtriser le périmètre","Valider le périmètre"]},
+      {nom:"Échéancier", ico:"📅", desc:"Planification temporelle de toutes les activités du projet. Nouvelles techniques : Échéancier Lean, LBS, alignement livrables-échéancier.", processus:["Planifier la gestion de l'échéancier","Élaborer l'échéancier","Suivre et maîtriser l'échéancier"]},
+      {nom:"Finances", ico:"💰", desc:"Gestion financière complète : estimation, budgétisation, contrôle des coûts. Lié directement à la création de valeur et au Business Case.", processus:["Planifier la gestion financière","Estimer les coûts","Élaborer le budget","Suivre et maîtriser les finances"]},
+      {nom:"Parties prenantes", ico:"👥", desc:"Identification, analyse, engagement et communication. Domaine enrichi avec une approche 'gestion pour les parties prenantes' (vs 'gestion des parties prenantes').", processus:["Identifier les parties prenantes","Planifier l'implication","Planifier la gestion des communications","Gérer l'implication","Gérer les communications","Suivre l'implication","Suivre les communications"]},
+      {nom:"Ressources", ico:"🧑‍💼", desc:"Gestion des ressources humaines et matérielles. Inclut les power skills (compétences comportementales) obligatoires pour les chefs de projet.", processus:["Planifier la gestion des ressources","Estimer les ressources","Obtenir les ressources","Diriger l'équipe","Suivre et maîtriser les ressources"]},
+      {nom:"Risque", ico:"⚠️", desc:"Identification, analyse et réponse aux risques et opportunités. Intègre la notion d'incertitude du PMBOK 7. Lié à tous les autres domaines.", processus:["Planifier la gestion des risques","Identifier les risques","Réaliser l'analyse des risques","Planifier les réponses aux risques","Mettre en œuvre les réponses","Maîtriser les risques"]},
+    ],
+    supprimés: ["Approche & Cycle de vie → intégré dans Gouvernance + Périmètre", "Équipe → intégré dans Ressources + Gouvernance", "Travail du projet → intégré dans Gouvernance", "Mesure → intégré dans tous les domaines", "Incertitude → intégré dans Risque"]
+  },
+  nouveautes: [
+    {ico:"🌱", titre:"Durabilité (ESG)", desc:"Nouveau pilier majeur. KPIs durabilité dans la charte, pyramide de durabilité, management axé sur les réalisations durables. Impact sur tous les domaines."},
+    {ico:"🤖", titre:"Intelligence Artificielle", desc:"L'IA est explicitement mentionnée comme outil de management de projet. IA générative, stockage des données, impact technologique intégré dans les compétences requises du PM."},
+    {ico:"⚙️", titre:"40 processus non prescriptifs", desc:"Retour des groupes de processus classiques sous forme de 40 processus adaptables. Ni exhaustifs, ni obligatoires — à choisir selon le contexte du projet."},
+    {ico:"🏛️", titre:"5 domaines d'intérêt", desc:"Réintroduction des 5 groupes de processus classiques (Lancement, Planification, Exécution, Suivi & Maîtrise, Clôture) comme 'domaines d'intérêt' — plus flexibles que les anciens groupes de processus."},
+    {ico:"💪", titre:"Power Skills obligatoires", desc:"Les compétences comportementales (communication, leadership, négociation, résolution de conflits) deviennent des compétences fondamentales du PM, au même niveau que les compétences techniques."},
+    {ico:"🎯", titre:"Vérification des résultats", desc:"Chaque domaine inclut désormais une section 'Vérifier les résultats' avec des tableaux de résultats cibles et des mécanismes de contrôle concrets."},
+  ]
+};
+
+function PMBOK7vs8() {
+  const [tab, setTab] = useState("principes");
+  const [selected, setSelected] = useState(null);
+  const [view, setView] = useState("grille"); // grille | detail
+
+  const TABS = [
+    {id:"principes", label:"📋 Principes 12→6"},
+    {id:"domaines",  label:"🗂️ Domaines 8→7"},
+    {id:"nouveautes",label:"✨ Nouveautés"},
+  ];
+
+  const couleurP7 = "#6366F1";
+  const couleurP8 = "#10B981";
+
+  return (
+    <div>
+      <div className="eyebrow">Évolution du standard PMI</div>
+      <div className="sec-title">PMBOK 7 vs PMBOK 8 🔄</div>
+      <div className="sec-desc">Basé sur le Guide PMBOK® Huitième édition (PMI, 2024). Compare les deux versions pour comprendre l'évolution du standard mondial de management de projet.</div>
+
+      {/* Bandeau résumé */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+        {[
+          {label:"Principes",v7:"12",v8:"6",ico:"📋"},
+          {label:"Domaines",v7:"8",v8:"7",ico:"🗂️"},
+          {label:"Processus",v7:"0",v8:"40",ico:"⚙️"},
+        ].map(({label,v7,v8,ico}) => (
+          <div key={label} style={{background:"var(--bg2)",border:"1px solid var(--border2)",borderRadius:"var(--r)",padding:"10px 8px",textAlign:"center"}}>
+            <div style={{fontSize:16,marginBottom:4}}>{ico}</div>
+            <div style={{fontSize:10,color:"var(--slate-l)",marginBottom:6,textTransform:"uppercase",letterSpacing:"1px"}}>{label}</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              <span style={{fontFamily:"Fraunces,serif",fontSize:18,fontWeight:700,color:couleurP7}}>{v7}</span>
+              <span style={{fontSize:10,color:"var(--slate-l)"}}>→</span>
+              <span style={{fontFamily:"Fraunces,serif",fontSize:18,fontWeight:700,color:couleurP8}}>{v8}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Onglets */}
+      <div className="ftabs" style={{marginBottom:16}}>
+        {TABS.map(t => (
+          <button key={t.id} className={"ftab"+(tab===t.id?" active":"")} onClick={() => {setTab(t.id); setSelected(null);}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── PRINCIPES ── */}
+      {tab === "principes" && (
+        <div>
+          <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.7,marginBottom:14}}>{COMPARAISON_DATA.principes.intro}</div>
+
+          {selected ? (
+            <div>
+              <button onClick={() => setSelected(null)} style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:"1px solid var(--border2)",color:"var(--slate-l)",padding:"7px 14px",borderRadius:"var(--r-sm)",cursor:"pointer",fontFamily:"Plus Jakarta Sans,sans-serif",fontSize:12,marginBottom:14}}>
+                ← Retour
+              </button>
+              {(() => {
+                const p8 = COMPARAISON_DATA.principes.pmbok8.find(p => p.code === selected);
+                if (!p8) return null;
+                const fusionP7 = p8.fusion[0] === "NOUVEAU" ? [] : COMPARAISON_DATA.principes.pmbok7.filter(p => p8.fusion.includes(p.code));
+                return (
+                  <div>
+                    <div style={{background:"rgba(16,185,129,0.06)",border:"2px solid rgba(16,185,129,0.2)",borderRadius:"var(--r)",padding:16,marginBottom:12}}>
+                      <div style={{fontSize:9,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"var(--green-l)",marginBottom:6}}>PMBOK 8 — {p8.code}</div>
+                      <div style={{fontFamily:"Fraunces,serif",fontSize:18,fontWeight:700,marginBottom:8}}>{p8.titre}</div>
+                      <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.75,marginBottom:10}}>{p8.desc}</div>
+                      <div style={{background:"rgba(16,185,129,0.08)",borderRadius:"var(--r-sm)",padding:10,marginBottom:8}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"var(--green-l)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>💡 Exemple concret</div>
+                        <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.65}}>{p8.exemples}</div>
+                      </div>
+                      <div style={{background:"rgba(99,102,241,0.06)",borderRadius:"var(--r-sm)",padding:10}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"var(--indigo-l)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:4}}>🎯 En pratique</div>
+                        <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.65}}>{p8.pratique}</div>
+                      </div>
+                    </div>
+                    {p8.fusion[0] !== "NOUVEAU" && fusionP7.length > 0 && (
+                      <div style={{background:"rgba(99,102,241,0.04)",border:"1px solid rgba(99,102,241,0.15)",borderRadius:"var(--r)",padding:14}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"var(--indigo-l)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>📌 Fusion depuis PMBOK 7</div>
+                        {fusionP7.map(p => (
+                          <div key={p.code} style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:8}}>
+                            <div style={{background:"rgba(99,102,241,0.15)",color:"var(--indigo-l)",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,flexShrink:0,whiteSpace:"nowrap"}}>{p.code}</div>
+                            <div>
+                              <div style={{fontSize:12,fontWeight:600}}>{p.titre}</div>
+                              <div style={{fontSize:11,color:"var(--slate-l)"}}>{p.court}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {p8.fusion[0] === "NOUVEAU" && (
+                      <div style={{background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.2)",borderRadius:"var(--r)",padding:14}}>
+                        <div style={{fontSize:12,color:"var(--gold-l)",fontWeight:600}}>⭐ Principe entièrement nouveau dans PMBOK 8</div>
+                        <div style={{fontSize:12,color:"var(--text-2)",marginTop:6}}>Ce principe n'existait pas dans le PMBOK 7. Il reflète l'évolution des attentes sociétales et organisationnelles en matière de management de projet durable.</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            <div>
+              {/* Vue côte à côte */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+                {/* PMBOK 7 */}
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:couleurP7,marginBottom:10,textAlign:"center"}}>PMBOK 7 — 12 principes</div>
+                  {COMPARAISON_DATA.principes.pmbok7.map(p => (
+                    <div key={p.code} style={{background:"rgba(99,102,241,0.05)",border:"1px solid rgba(99,102,241,0.12)",borderRadius:"var(--r-sm)",padding:"8px 10px",marginBottom:5}}>
+                      <div style={{fontSize:9,fontWeight:700,color:couleurP7,letterSpacing:"1.5px"}}>{p.code}</div>
+                      <div style={{fontSize:11,fontWeight:600,marginTop:2}}>{p.titre}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* PMBOK 8 */}
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:couleurP8,marginBottom:10,textAlign:"center"}}>PMBOK 8 — 6 principes</div>
+                  {COMPARAISON_DATA.principes.pmbok8.map(p => (
+                    <button key={p.code} onClick={() => setSelected(p.code)}
+                      style={{background:"rgba(16,185,129,0.06)",border:"1px solid rgba(16,185,129,0.18)",borderRadius:"var(--r-sm)",padding:"8px 10px",marginBottom:5,cursor:"pointer",textAlign:"left",width:"100%",fontFamily:"Plus Jakarta Sans,sans-serif",color:"var(--text)"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <div style={{fontSize:9,fontWeight:700,color:couleurP8,letterSpacing:"1.5px"}}>{p.code}</div>
+                        {p.fusion[0] === "NOUVEAU" && <div style={{fontSize:8,background:"rgba(245,158,11,0.15)",color:"var(--gold-l)",padding:"1px 6px",borderRadius:20,fontWeight:700}}>NOUVEAU</div>}
+                      </div>
+                      <div style={{fontSize:11,fontWeight:600,marginTop:2,lineHeight:1.3}}>{p.titre}</div>
+                      <div style={{fontSize:9,color:"var(--slate-l)",marginTop:3}}>Clique pour le détail →</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.12)",borderRadius:"var(--r-sm)",padding:10,fontSize:11,color:"var(--text-2)"}}>
+                💡 Clique sur un principe PMBOK 8 pour voir sa description détaillée, les exemples concrets et les principes PMBOK 7 qu'il absorbe.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── DOMAINES ── */}
+      {tab === "domaines" && (
+        <div>
+          <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.7,marginBottom:14}}>{COMPARAISON_DATA.domaines.intro}</div>
+
+          {/* PMBOK 7 supprimés */}
+          <div style={{background:"rgba(239,68,68,0.05)",border:"1px solid rgba(239,68,68,0.15)",borderRadius:"var(--r)",padding:12,marginBottom:14}}>
+            <div style={{fontSize:10,fontWeight:700,color:"#FCA5A5",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>🗑️ Domaines PMBOK 7 supprimés / fusionnés</div>
+            {COMPARAISON_DATA.domaines.supprimés.map((s,i) => (
+              <div key={i} style={{fontSize:11,color:"var(--text-2)",marginBottom:4}}>• {s}</div>
+            ))}
+          </div>
+
+          {/* 7 nouveaux domaines */}
+          <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:couleurP8,marginBottom:10}}>7 Domaines PMBOK 8</div>
+          {COMPARAISON_DATA.domaines.pmbok8.map((d,i) => (
+            <div key={d.nom} style={{marginBottom:8}}>
+              <button onClick={() => setSelected(selected===d.nom?null:d.nom)}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px",borderRadius:"var(--r)",border:selected===d.nom?"2px solid var(--green)":"1px solid var(--border2)",background:selected===d.nom?"rgba(16,185,129,0.06)":"var(--bg2)",cursor:"pointer",textAlign:"left",fontFamily:"Plus Jakarta Sans,sans-serif",color:"var(--text)",width:"100%"}}>
+                <div style={{fontSize:20}}>{d.ico}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:600}}>D0{i+1} — {d.nom}</div>
+                  <div style={{fontSize:11,color:"var(--slate-l)",marginTop:2}}>{d.processus.length} processus</div>
+                </div>
+                <div style={{color:"var(--slate-l)",fontSize:12,transform:selected===d.nom?"rotate(180deg)":"none",transition:"transform 0.2s"}}>▼</div>
+              </button>
+              {selected === d.nom && (
+                <div style={{background:"rgba(16,185,129,0.04)",border:"1px solid rgba(16,185,129,0.15)",borderRadius:"0 0 var(--r) var(--r)",padding:14,marginTop:-4}}>
+                  <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.7,marginBottom:10}}>{d.desc}</div>
+                  <div style={{fontSize:10,fontWeight:700,color:"var(--green-l)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:8}}>Processus inclus ({d.processus.length})</div>
+                  {d.processus.map((p,j) => (
+                    <div key={j} style={{display:"flex",gap:8,alignItems:"center",marginBottom:5}}>
+                      <div style={{width:18,height:18,borderRadius:"50%",background:"rgba(16,185,129,0.15)",color:"var(--green-l)",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{j+1}</div>
+                      <div style={{fontSize:12,color:"var(--text-2)"}}>{p}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Domaines d'intérêt */}
+          <div style={{background:"rgba(245,158,11,0.06)",border:"1px solid rgba(245,158,11,0.18)",borderRadius:"var(--r)",padding:14,marginTop:14}}>
+            <div style={{fontSize:11,fontWeight:700,color:"var(--gold-l)",textTransform:"uppercase",letterSpacing:"1px",marginBottom:10}}>⚡ Les 5 Domaines d'intérêt (nouveauté PMBOK 8)</div>
+            {["Lancement","Planification","Exécution","Suivi & Maîtrise","Clôture"].map((d,i) => (
+              <div key={i} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                <div style={{width:22,height:22,borderRadius:6,background:"rgba(245,158,11,0.15)",color:"var(--gold-l)",fontSize:10,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+                <div style={{fontSize:12,color:"var(--text-2)"}}>{d}</div>
+              </div>
+            ))}
+            <div style={{fontSize:11,color:"var(--slate-l)",marginTop:8}}>Ces 5 domaines d'intérêt remplacent les anciens groupes de processus. Ils organisent les 40 processus dans une séquence logique applicable à toutes les approches (prédictive, agile, hybride).</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── NOUVEAUTÉS ── */}
+      {tab === "nouveautes" && (
+        <div>
+          <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.7,marginBottom:14}}>
+            Le PMBOK 8 introduit plusieurs concepts majeurs qui reflètent l'évolution du management de projet dans un monde VUCA, technologique et soucieux de durabilité.
+          </div>
+          {COMPARAISON_DATA.nouveautes.map((n,i) => (
+            <div key={i} style={{background:"var(--bg2)",border:"1px solid var(--border2)",borderRadius:"var(--r)",padding:14,marginBottom:10}}>
+              <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                <div style={{fontSize:24,flexShrink:0}}>{n.ico}</div>
+                <div>
+                  <div style={{fontFamily:"Fraunces,serif",fontSize:15,fontWeight:700,marginBottom:6}}>{n.titre}</div>
+                  <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.7}}>{n.desc}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* Tableau récapitulatif */}
+          <div style={{background:"var(--bg2)",border:"1px solid var(--border2)",borderRadius:"var(--r)",padding:14,marginTop:6}}>
+            <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"1.5px",color:"var(--indigo-l)",marginBottom:12}}>📊 Tableau comparatif récapitulatif</div>
+            {[
+              ["Élément","PMBOK 7","PMBOK 8"],
+              ["Principes","12","6 (consolidés)"],
+              ["Domaines","8","7"],
+              ["Processus","Aucun","40 non prescriptifs"],
+              ["Groupes de processus","Supprimés","Réintroduits (domaines d'intérêt)"],
+              ["Durabilité","Absente","Principe central"],
+              ["IA","Non mentionnée","Explicitement intégrée"],
+              ["Power Skills","Optionnels","Obligatoires"],
+              ["Approche","Flexible","Flexible + processus concrets"],
+              ["Cible examen PMP","Juillet 2021 → juillet 2026","À partir de mi-2026"],
+            ].map((row, i) => (
+              <div key={i} style={{display:"grid",gridTemplateColumns:"2fr 1.5fr 1.5fr",gap:8,padding:"7px 0",borderBottom:i>0?"1px solid var(--border2)":"none",alignItems:"center"}}>
+                {row.map((cell, j) => (
+                  <div key={j} style={{fontSize:i===0?10:12,fontWeight:i===0?700:400,color:i===0?"var(--slate-l)":j===0?"var(--text)":j===1?couleurP7:couleurP8,textTransform:i===0?"uppercase":"none",letterSpacing:i===0?"1px":"0"}}>
+                    {cell}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState("dashboard");
   const [toast, setToast] = useState("");
@@ -1409,6 +2013,8 @@ export default function App() {
     {id:"guide",      ico:"📚", lbl:"Guide"},
     {id:"flashcards", ico:"🃏", lbl:"Cartes"},
     {id:"sprint",     ico:"⚡", lbl:"Sprint"},
+    {id:"cas",        ico:"📋", lbl:"Cas"},
+    {id:"pmbok8",     ico:"🆚", lbl:"P7/P8"},
     {id:"visuels",    ico:"📐", lbl:"Visuels"},
     {id:"exam",       ico:"⏱️", lbl:"Examen"},
     {id:"progress",   ico:"📊", lbl:"Progrès"},
@@ -1435,6 +2041,8 @@ export default function App() {
           {page === "guide" && <Guide state={state} onToggleObj={onToggleObj} addXP={addXP} />}
           {page === "flashcards" && <Flashcards state={state} onRate={onRate} addXP={addXP} />}
           {page === "sprint" && <Sprint15 state={state} addXP={addXP} />}
+          {page === "cas" && <CasEtude state={state} addXP={addXP} />}
+          {page === "pmbok8" && <PMBOK7vs8 />}
           {page === "visuels" && <PageVisuels />}
           {page === "exam" && <Exam state={state} addXP={addXP} onExamDone={onExamDone} />}
           {page === "progress" && <Progress state={state} />}
